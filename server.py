@@ -28,21 +28,22 @@ s.bind((listenAddr, listenPort))
 s.listen(1)              # allow only one outstanding request
 # s is a factory for connected sockets
 
-conn, addr = s.accept()  # wait until incoming connection request (and accept it)
-print('Connected by', addr)
-while 1:
-    data = conn.recv(1024).decode()
-    if len(data) == 0:
-        print("Zero length read, nothing to send, terminating")
-        break
-    sendMsg = ("Echoing %s" % data).encode()
-    print("Received '%s', sending '%s'" % (data, sendMsg.decode()))
-    while len(sendMsg):
-        bytesSent = conn.send(sendMsg)
-        sendMsg = sendMsg[bytesSent:0]
-conn.shutdown(socket.SHUT_WR)   # indicate that the stream is complete
-print("socket shut down for writing, waiting 3s for socket to drain...")
-time.sleep(3)
-print("    ...closing socket")
-conn.close()
+while True:
+    conn, addr = s.accept()  # wait until incoming connection request (and accept it)
+    print('Connected by', addr)
+    while 1:
+        data = conn.recv(1024).decode()
+        if len(data) == 0:
+            print("Zero length read, nothing to send, terminating")
+            break
+        sendMsg = ("Echoing %s" % data).encode()
+        print("Received '%s', sending '%s'" % (data, sendMsg.decode()))
+        while len(sendMsg):
+            bytesSent = conn.send(sendMsg)
+            sendMsg = sendMsg[bytesSent:0]
+    conn.shutdown(socket.SHUT_WR)   # indicate that the stream is complete
+    print("socket shut down for writing, waiting 3s for socket to drain...")
+    time.sleep(3)
+    print("    ...closing socket")
+    conn.close()
 
