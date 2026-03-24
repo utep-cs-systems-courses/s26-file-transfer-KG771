@@ -2,7 +2,7 @@
 
 # Echo server program
 
-import socket, sys, re, time
+import socket, sys, re, time, os
 sys.path.append("../lib")       # for params
 import params
 
@@ -31,6 +31,17 @@ s.listen(1)              # allow only one outstanding request
 while True:
     conn, addr = s.accept()  # wait until incoming connection request (and accept it)
     print('Connected by', addr)
+    #fork processes
+    forkResult = os.fork()     # fork child for this client 
+    if (forkResult == 0):        # child
+        listenSock.close()         # child doesn't need listenSock
+        chatWithClient(connSockAddr)
+    # parent
+    sock, addr = connSockAddr
+    sock.close()   # parent closes its connection to client
+    pidAddr[forkResult] = addr
+
+    print(f"spawned off child with pid = {forkResult} at addr {addr}")
     while 1:
         data = conn.recv(1024).decode()
         if len(data) == 0:
