@@ -19,6 +19,8 @@ paramMap = params.parseParams(switchesVarDefaults)
 listenPort = paramMap['listenPort']
 listenAddr = ''       # Symbolic name meaning all available interfaces
 
+pidAddr = {}  #for active connections: maps pid -> client addr
+
 if paramMap['usage']:
     params.usage()
 
