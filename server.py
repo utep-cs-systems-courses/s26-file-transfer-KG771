@@ -13,7 +13,7 @@ switchesVarDefaults = (
 
 
 
-progname = "echoserver"
+progname = "server"
 paramMap = params.parseParams(switchesVarDefaults)
 
 listenPort = paramMap['listenPort']
