@@ -24,41 +24,80 @@ pidAddr = {}  #for active connections: maps pid -> client addr
 if paramMap['usage']:
     params.usage()
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-print(f"server listening at ip addr {listenAddr} port #{listenPort}")
-s.bind((listenAddr, listenPort))
-s.listen(1)              # allow only one outstanding request
-# s is a factory for connected sockets
-
+def chatWithClient(connAddr):
+    sock, addr = connAddr
+    print(f"Child pid={os.getpid()} connected to {addr}")
+ 
+    try:
+        # Receive the requested filename
+        request = framing.recv_frame(sock)
+        if not request:
+            print("Client disconnected before sending filename")
+            sock.close()
+            sys.exit(1)
+ 
+        filename = request.decode()
+        print(f"Client requests file: '{filename}'")
+ 
+        # Try to open and send the file
+        try:
+            with open(filename, 'rb') as f:
+                file_data = f.read()
+            framing.send_frame(sock, b"OK")
+            framing.send_frame(sock, file_data)
+            print(f"Sent {len(file_data)} bytes for '{filename}'")
+        except FileNotFoundError:
+            error_msg = f"ERROR: File '{filename}' not found"
+            print(error_msg)
+            framing.send_frame(sock, error_msg.encode())
+ 
+    except Exception as e:
+        print(f"Error in child: {e}")
+    finally:
+        sock.close()
+ 
+    sys.exit(0)   # child must exit here — do not fall through into parent loop
+ 
+# --- Set up listening socket ---
+ 
+listenSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+listenSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # rebind immediately after crash
+listenSock.settimeout(5)          # accept() blocks at most 5s so we can reap zombies
+listenSock.bind((listenAddr, listenPort))
+listenSock.listen(5)              # backlog of 5 pending connections
+ 
+print(f"Server listening on port {listenPort}")
+ 
+# --- Main accept loop ---
+ 
 while True:
-    # reap zombie children (if any)
+    # Reap any zombie children
     while pidAddr.keys():
-        # Check for exited children (zombies).  If none, don't block (hang)
-        if (waitResult := os.waitid(os.P_ALL, 0, os.WNOHANG | os.WEXITED)): 
+        if (waitResult := os.waitid(os.P_ALL, 0, os.WNOHANG | os.WEXITED)):
             zPid, zStatus = waitResult.si_pid, waitResult.si_status
-            print(f"""zombie reaped:
-            \tpid={zPid}, status={zStatus}
-            \twas connected to {pidAddr[zPid]}""")
+            print(f"Zombie reaped: pid={zPid}, status={zStatus}, was connected to {pidAddr[zPid]}")
             del pidAddr[zPid]
         else:
-            break               # no zombies; break from loop
-    print(f"Currently {len(pidAddr.keys())} clients")
-
+            break   # no more zombies right now
+ 
+    print(f"Currently {len(pidAddr)} active client(s)")
+ 
     try:
-        connSockAddr = listenSock.accept() # accept connection from a new client
+        connSockAddr = listenSock.accept()
     except TimeoutError:
-        connSockAddr = None 
-
+        connSockAddr = None
+ 
     if connSockAddr is None:
         continue
-        
-    forkResult = os.fork()     # fork child for this client 
-    if (forkResult == 0):        # child
-        listenSock.close()         # child doesn't need listenSock
+ 
+    forkResult = os.fork()
+    if forkResult == 0:            # child process
+        listenSock.close()         # child doesn't need the listening socket
         chatWithClient(connSockAddr)
-    # parent
+        # chatWithClient calls sys.exit(0), so we never reach here
+ 
+    # Parent process
     sock, addr = connSockAddr
-    sock.close()   # parent closes its connection to client
+    sock.close()                   # parent closes its copy of the connected socket
     pidAddr[forkResult] = addr
-    print(f"spawned off child with pid = {forkResult} at addr {addr}")
-
+    print(f"Spawned child pid={forkResult} for client {addr}")
