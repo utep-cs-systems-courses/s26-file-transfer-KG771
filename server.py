@@ -29,9 +29,27 @@ s.listen(1)              # allow only one outstanding request
 # s is a factory for connected sockets
 
 while True:
-    conn, addr = s.accept()  # wait until incoming connection request (and accept it)
-    print('Connected by', addr)
-    #fork processes
+    # reap zombie children (if any)
+    while pidAddr.keys():
+        # Check for exited children (zombies).  If none, don't block (hang)
+        if (waitResult := os.waitid(os.P_ALL, 0, os.WNOHANG | os.WEXITED)): 
+            zPid, zStatus = waitResult.si_pid, waitResult.si_status
+            print(f"""zombie reaped:
+            \tpid={zPid}, status={zStatus}
+            \twas connected to {pidAddr[zPid]}""")
+            del pidAddr[zPid]
+        else:
+            break               # no zombies; break from loop
+    print(f"Currently {len(pidAddr.keys())} clients")
+
+    try:
+        connSockAddr = listenSock.accept() # accept connection from a new client
+    except TimeoutError:
+        connSockAddr = None 
+
+    if connSockAddr is None:
+        continue
+        
     forkResult = os.fork()     # fork child for this client 
     if (forkResult == 0):        # child
         listenSock.close()         # child doesn't need listenSock
@@ -40,21 +58,5 @@ while True:
     sock, addr = connSockAddr
     sock.close()   # parent closes its connection to client
     pidAddr[forkResult] = addr
-
     print(f"spawned off child with pid = {forkResult} at addr {addr}")
-    while 1:
-        data = conn.recv(1024).decode()
-        if len(data) == 0:
-            print("Zero length read, nothing to send, terminating")
-            break
-        sendMsg = ("Echoing %s" % data).encode()
-        print("Received '%s', sending '%s'" % (data, sendMsg.decode()))
-        while len(sendMsg):
-            bytesSent = conn.send(sendMsg)
-            sendMsg = sendMsg[bytesSent:0]
-    conn.shutdown(socket.SHUT_WR)   # indicate that the stream is complete
-    print("socket shut down for writing, waiting 3s for socket to drain...")
-    time.sleep(3)
-    print("    ...closing socket")
-    conn.close()
 
